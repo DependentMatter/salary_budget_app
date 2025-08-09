@@ -21,6 +21,4 @@ spec:
       - image: shubhamgakhare44130/salary_app:38
         name: sal
         resources: {}
-status: {}
-
-~                          
+status: {}                  
