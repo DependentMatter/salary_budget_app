@@ -1,0 +1,85 @@
+pipeline {
+    agent any
+    environment {
+        DOCKER_IMAGE = "salary_app" // Define your Docker image name here
+        DOCKER_REGISTRY = "shubhamgakhare44130" // Define your Docker registry here
+        DOCKER_CREDENTIALS_ID = "docker" // Replace with your actual credentials ID
+        
+    }
+     
+    stages {
+        stage('checkout') {
+            steps {
+                 git branch: 'main',
+                    url: 'https://github.com/DependentMatter/salary_budget_app.git'
+                    sh 'date'
+                    
+            }
+        }
+    
+     stage('Build Docker Image') {
+            steps {
+                script {
+                    def imageTag = "${DOCKER_IMAGE}:${BUILD_NUMBER}"
+                    sh """
+                    docker build -t ${imageTag} .
+                    """
+                }
+            }
+        }
+      stage('Push Docker Image') {
+            steps {
+                script {
+                    def imageTag = "${DOCKER_IMAGE}:${BUILD_NUMBER}"
+                    def registryImageTag = "${DOCKER_REGISTRY}/${imageTag}"
+                    withDockerRegistry(credentialsId: 'docker', toolName: 'docker'){
+                        sh """
+                        docker tag ${imageTag} ${registryImageTag}
+                        docker push ${registryImageTag}
+                        """
+                    }
+                }
+            }
+        }
+       stage('Build Docker Delete') {
+            steps {
+                script {
+                    echo "Image Tag is: ${env.IMAGE_TAG}"
+
+                    def previousBuildNumber = BUILD_NUMBER.toInteger() - 1
+                    def oldImageTag = "${DOCKER_IMAGE}:${previousBuildNumber}"
+
+                    echo "Trying to delete old image: ${oldImageTag}"
+                    echo "Trying to delete old image: shubhamgakhare44130/${oldImageTag}"
+                    // Delete the old image if it exists
+                    sh """
+                        docker image rm -f ${oldImageTag} || echo "Old image not found: ${oldImageTag}"
+                        docker image rm -f shubhamgakhare44130/${oldImageTag} || echo "Old image not found: shubhamgakhare44130/${oldImageTag}"
+                    """
+                }
+            }
+        }
+        stage('Update Deployment YAML') {
+    steps {
+        script {
+            def imageTag = "${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${BUILD_NUMBER}"
+            echo "Updating deployment.yaml with image tag: ${imageTag}"
+            
+            sh """
+                sed -i 's|image: .*|image: ${imageTag}|' deployment.yaml
+            """
+        }
+    }
+}
+        stage('Deploy to Kubernetes') {
+    steps {
+        withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+            sh '''
+                kubectl apply -n skg -f deployment.yaml
+                kubectl apply -n skg -f service.yaml
+            '''
+        }
+    }
+}
+}
+}
